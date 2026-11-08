@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API тривог — документація</title>
+<meta name="description" content="Опис API стану повітряних тривог: токени, стан регіонів, потік змін (SSE), сумісність з ukrainealarm API v3.">
+<link rel="stylesheet" href="/docs.css">
+<script src="/docs.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <div class="brand"><span class="logo" aria-hidden="true"></span><span>API тривог</span><span class="ver">v1 · v3-сумісний</span></div>
+    <nav class="top-links" aria-label="Посилання"><a href="/">Тривоги зараз</a><a href="#auth">Токен</a><a href="#errors">Помилки</a></nav>
+  </div>
+</header>
+
+<div class="wrap layout">
+<aside class="toc" aria-label="Зміст">
+  <p class="toc-h">Початок</p>
+  <a href="#intro">Огляд</a>
+  <a href="#auth">Токен і авторизація</a>
+  <a href="#model">Як рахується стан</a>
+  <p class="toc-h">API v1</p>
+  <a href="#op-status"><span class="m get">GET</span>/status</a>
+  <a href="#op-stream"><span class="m get">GET</span>/stream</a>
+  <a href="#op-regions"><span class="m get">GET</span>/regions</a>
+  <a href="#op-me"><span class="m get">GET</span>/me</a>
+  <a href="#op-session-post"><span class="m post">POST</span>/session</a>
+  <a href="#op-session-delete"><span class="m del">DEL</span>/session</a>
+  <p class="toc-h">Сумісність v3</p>
+  <a href="#op-v3-alerts"><span class="m get">GET</span>/alerts</a>
+  <a href="#op-v3-alert"><span class="m get">GET</span>/alerts/{id}</a>
+  <a href="#op-v3-status"><span class="m get">GET</span>/alerts/status</a>
+  <a href="#op-v3-regions"><span class="m get">GET</span>/regions</a>
+  <p class="toc-h">Довідка</p>
+  <a href="#schemas">Схеми</a>
+  <a href="#errors">Помилки й ліміти</a>
+  <a href="#test-region">Тестова область</a>
+  <a href="#examples">Приклади коду</a>
+</aside>
+
+<main>
+<section id="intro" class="block">
+  <h1>API стану повітряних тривог</h1>
+  <p class="lead">Стан тривог по областях, районах і громадах України — для пристроїв, застосунків і ботів.
+  Дані надходять від <a href="https://api.ukrainealarm.com/" rel="noopener">ukrainealarm.com</a> через webhook
+  і звіряються з їхнім API щохвилини.</p>
+  <div class="facts">
+    <div><span class="k">Базова адреса</span><code class="base">https://alerts.example.com</code></div>
+    <div><span class="k">Формат</span><span>JSON, UTF-8; час — RFC 3339 (UTC)</span></div>
+    <div><span class="k">Миттєві зміни</span><span>Server-Sent Events: <a href="#op-stream">/api/v1/stream</a></span></div>
+    <div><span class="k">Доступ</span><span>за токеном (<a href="#auth">як отримати</a>)</span></div>
+  </div>
+  <p>Два варіанти використання:</p>
+  <ul>
+    <li><b>API v1</b> — стан регіону з урахуванням ієрархії одразу «з коробки»: <code>active</code> / <code>partial</code> / <code>none</code>,
+      найвищий рівень загрози, тип тривоги. Підходить для лампи, табло, бота без власної логіки.</li>
+    <li><b>Сумісний v3</b> — ті самі відповіді, що в <code>api.ukrainealarm.com/api/v3</code>. Готовій прошивці
+      чи бібліотеці досить замінити адресу й токен.</li>
+  </ul>
+</section>
+
+<section id="auth" class="block">
+  <h2>Токен і авторизація</h2>
+  <p>Кожен запит потребує токена. Токен видає власник сервера; він має вигляд <code>ac_</code> + 43 символи
+  і обмеження: дозволені регіони, ліміт запитів на хвилину, кількість одночасних потоків, термін дії,
+  інколи — дозволені IP-адреси.</p>
+  <table class="tbl">
+    <thead><tr><th>Спосіб</th><th>Приклад</th></tr></thead>
+    <tbody>
+      <tr><td>заголовок (рекомендовано)</td><td><code>Authorization: Bearer ac_…</code></td></tr>
+      <tr><td>як в ukrainealarm</td><td><code>Authorization: ac_…</code></td></tr>
+      <tr><td>окремий заголовок</td><td><code>X-API-Key: ac_…</code></td></tr>
+      <tr><td>у адресі — лише для токенів з дозволом</td><td><code>?token=ac_…</code></td></tr>
+    </tbody>
+  </table>
+  <p class="note">Токен у адресі потрапляє в журнали проміжних серверів — використовуйте його, лише коли пристрій не вміє заголовків.
+  У браузері замість цього — <a href="#op-session-post">сесія</a>.</p>
+
+  <div class="authbox" id="authbox">
+    <div>
+      <h3>Спробувати на цій сторінці</h3>
+      <p class="k">Вставте свій токен — кнопки «Виконати» нижче надсилатимуть справжні запити з ним.
+      Токен лишається лише в пам'яті цієї вкладки й нікуди, крім цього сервера, не передається.</p>
+    </div>
+    <form class="authform" id="authform">
+      <label for="tok" class="sr">Токен</label>
+      <input id="tok" type="password" autocomplete="off" spellcheck="false" placeholder="ac_…" pattern="ac_[A-Za-z0-9_\-]{43}">
+      <button type="submit" class="btn dark">Застосувати</button>
+      <button type="button" class="btn" id="tokclear">Забути</button>
+    </form>
+    <p class="k" id="authstate" role="status">Токен не задано.</p>
+  </div>
+</section>
+
+<section id="model" class="block">
+  <h2>Як рахується стан</h2>
+  <p>Регіони — як в ukrainealarm: <b>область</b> (<code>State</code>) → <b>район</b> (<code>District</code>) → <b>громада</b> (<code>Community</code>).
+  Тривоги оголошують на будь-якому рівні; стан регіону враховує і предків, і нащадків:</p>
+  <table class="tbl">
+    <thead><tr><th><code>state</code></th><th>Коли</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill red">active</span></td><td>тривогу оголошено для самого регіону або будь-якого його предка (район, область)</td></tr>
+      <tr><td><span class="pill amber">partial</span></td><td>тривога лише в частині вкладених регіонів (напр. в одному районі області)</td></tr>
+      <tr><td><span class="pill">none</span></td><td>спокій</td></tr>
+    </tbody>
+  </table>
+  <p>Рівень загрози <code>level</code> — найвищий серед чинних: <code>red</code> — ракетна небезпека,
+  <code>yellow</code> — загроза БпЛА, <code>unknown</code> — не вказано. Рівнів може бути кілька одночасно —
+  усі вони в <code>types.&lt;тип&gt;.levels</code>.</p>
+  <p><b>Свіжість.</b> Якщо сервер давно не підтверджував стан з джерелом (немає зв'язку), відповідь має
+  <code>"stale": true</code> — показуйте останній відомий стан з позначкою «немає зв'язку», а не «спокій».</p>
+</section>
+
+<h2 class="group" id="v1">API v1</h2>
+
+<section class="op" id="op-status" data-path="/api/v1/status">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v1/status</code><span class="sum">Стан регіонів</span></div>
+  <div class="op-b">
+    <p>Поточний стан запитаних регіонів з урахуванням ієрархії. Для пристроїв, що опитують сервер
+    (раз на 10–30 с у межах ліміту токена). Для миттєвої реакції — <a href="#op-stream">потік</a>.</p>
+    <h4>Параметри</h4>
+    <table class="tbl params">
+      <thead><tr><th>Назва</th><th>Де</th><th>Опис</th></tr></thead>
+      <tbody><tr><td><code>regions</code></td><td>query</td><td>ID регіонів через кому, до 64. Без параметра — регіони, закріплені за токеном. <span class="k">Напр. <code>32,4</code></span></td></tr></tbody>
+    </table>
+    <h4>Відповідь <span class="code200">200</span> <a href="#s-status" class="k">StatusResponse</a></h4>
+<pre class="json">{
+  "ok": true,
+  "stale": false,
+  "verifiedAt": "2026-11-08T13:20:05Z",
+  "version": 4182,
+  "regions": {
+    "32": {
+      "id": "32", "name": "Вінницький район", "type": "District",
+      "state": "active", "level": "red", "since": "2026-11-08T13:01:10Z",
+      "types": {
+        "AIR": { "state": "active", "levels": ["red", "yellow"],
+                 "since": "2026-11-08T13:01:10Z", "from": ["32"] }
+      }
+    },
+    "4": {
+      "id": "4", "name": "Вінницька область", "type": "State",
+      "state": "partial", "level": "red",
+      "types": { "AIR": { "state": "partial", "levels": ["red", "yellow"], "partial": ["32"] } }
+    }
+  }
+}</pre>
+    <p class="k">Помилки: <code>400</code> некоректний чи невідомий регіон, <code>401</code>, <code>403</code> регіон поза дозволеними, <code>429</code>. Див. <a href="#errors">помилки</a>.</p>
+    <form class="try" data-path="/api/v1/status">
+      <label>regions <input name="regions" placeholder="32,4"></label>
+      <button class="btn dark" type="submit">Виконати</button>
+    </form>
+  </div>
+</section>
+
+<section class="op" id="op-stream" data-path="/api/v1/stream">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v1/stream</code><span class="sum">Потік змін (SSE) — рекомендовано</span></div>
+  <div class="op-b">
+    <p>Одне довге HTTPS-з'єднання (<code>text/event-stream</code>); зміни приходять, щойно сервер їх отримав.
+    Скільки потоків можна тримати одночасно — задано в токені.</p>
+    <h4>Параметри</h4>
+    <table class="tbl params">
+      <thead><tr><th>Назва</th><th>Де</th><th>Опис</th></tr></thead>
+      <tbody><tr><td><code>regions</code></td><td>query</td><td>як у <a href="#op-status">/status</a></td></tr></tbody>
+    </table>
+    <h4>Події</h4>
+    <table class="tbl">
+      <thead><tr><th>event</th><th>data</th><th>Коли</th></tr></thead>
+      <tbody>
+        <tr><td><code>snapshot</code></td><td><a href="#s-status">StatusResponse</a></td><td>одразу після підключення — повний стан запитаних регіонів</td></tr>
+        <tr><td><code>update</code></td><td><code>{"version", "region": <a href="#s-region">RegionStatus</a>}</code></td><td>змінився стан регіону (а не на кожну подію в країні)</td></tr>
+        <tr><td><code>meta</code></td><td><code>{"stale", "verifiedAt"}</code></td><td>змінилась свіжість даних</td></tr>
+        <tr><td><code>bye</code></td><td><code>{"reason"}</code></td><td>токен змінено, відкликано чи прострочено — сервер закриває потік</td></tr>
+        <tr><td><code>: ping</code></td><td>—</td><td>коментар кожні 15 с, щоб з'єднання не вважалось мертвим</td></tr>
+      </tbody>
+    </table>
+<pre class="sse">retry: 2847
+
+event: snapshot
+data: {"ok":true,"stale":false,"verifiedAt":"…","version":4182,"regions":{…}}
+
+event: update
+data: {"version":4183,"region":{"id":"32","state":"none","types":{},…}}
+
+: ping</pre>
+    <ul class="rules">
+      <li>Після обриву просто перепідключіться: першою прийде <code>snapshot</code> з актуальним станом — нічого не загубиться.</li>
+      <li>Якщо 45 с не надходить нічого (навіть <code>ping</code>) — з'єднання мертве, перепідключіться.</li>
+      <li><code>retry</code> — рекомендована пауза перед перепідключенням, мс (1–5 с, випадкова — щоб пристрої не стукали одночасно).</li>
+      <li>Зміни, що сталися між двома відправками, можуть злитися в одну — ви завжди отримуєте останній стан.</li>
+    </ul>
+    <form class="try" data-path="/api/v1/stream" data-stream="1">
+      <label>regions <input name="regions" placeholder="32,4"></label>
+      <button class="btn dark" type="submit">Підключитися</button>
+      <button class="btn stop" type="button" hidden>Зупинити</button>
+    </form>
+  </div>
+</section>
+
+<section class="op" id="op-regions" data-path="/api/v1/regions">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v1/regions</code><span class="sum">Список регіонів</span></div>
+  <div class="op-b">
+    <p>Усі регіони з назвами й зв'язками. Список змінюється рідко: тримайте його в кеші. Відповідь має
+    <code>ETag</code> — запит з <code>If-None-Match</code> поверне <code>304</code> без тіла.</p>
+    <h4>Відповідь <span class="code200">200</span></h4>
+<pre class="json">{
+  "ok": true,
+  "regions": [
+    { "id": "4",    "name": "Вінницька область", "type": "State" },
+    { "id": "32",   "name": "Вінницький район",  "type": "District",  "parent": "4",  "state": "4" },
+    { "id": "1234", "name": "Вінницька територіальна громада", "type": "Community", "parent": "32", "state": "4" }
+  ]
+}</pre>
+    <p class="k"><code>parent</code> — безпосередній предок, <code>state</code> — область. Регіони <a href="#test-region">тестової області</a> мають <code>"test": true</code>.</p>
+    <form class="try" data-path="/api/v1/regions"><button class="btn dark" type="submit">Виконати</button></form>
+  </div>
+</section>
+
+<section class="op" id="op-me" data-path="/api/v1/me">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v1/me</code><span class="sum">Мій токен</span></div>
+  <div class="op-b">
+    <p>Налаштування вашого токена й ваша адреса очима сервера — зручно для перевірки підключення.</p>
+<pre class="json">{
+  "ok": true, "id": "1a2b3c4d", "name": "Лампа кухня",
+  "expires": "0001-01-01T00:00:00Z",
+  "rpm": 30, "streams": 1, "streamsOpen": 1,
+  "regions": ["37"], "nets": [], "allowQuery": false,
+  "ip": "203.0.113.25"
+}</pre>
+    <p class="k"><code>expires</code> = <code>0001-01-01…</code> — безстроковий; порожній <code>regions</code> — усі регіони; порожній <code>nets</code> — будь-які адреси.</p>
+    <form class="try" data-path="/api/v1/me"><button class="btn dark" type="submit">Виконати</button></form>
+  </div>
+</section>
+
+<section class="op" id="op-session-post">
+  <div class="op-h"><span class="m post">POST</span><code class="path">/api/v1/session</code><span class="sum">Сесія для браузера</span></div>
+  <div class="op-b">
+    <p><code>EventSource</code> у браузері не вміє заголовків. Сторінка один раз надсилає токен у заголовку
+    й отримує cookie <code>__Host-ac_session</code> (<code>HttpOnly</code>, <code>Secure</code>, <code>SameSite=Strict</code>, 12 год);
+    далі потік і запити працюють з нею, а токен не потрапляє ні в адресу, ні в журнали.</p>
+    <ul class="rules">
+      <li>Лише токен у заголовку (не <code>?token=</code>); запит з чужого <code>Origin</code> відхиляється — сесія працює лише на цьому ж сайті.</li>
+      <li>Сесія має ті самі обмеження, що й токен. Зміна чи відкликання токена одразу гасить усі його сесії.</li>
+      <li>Сесії живуть у пам'яті сервера: після його перезапуску <code>401</code> → повторіть <code>POST</code>.</li>
+    </ul>
+<pre class="json">{ "ok": true, "expires": "2026-11-09T01:20:05Z" }</pre>
+<pre class="code">await fetch("/api/v1/session", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+const es = new EventSource("/api/v1/stream?regions=32");   // cookie додається сама</pre>
+  </div>
+</section>
+
+<section class="op" id="op-session-delete">
+  <div class="op-h"><span class="m del">DELETE</span><code class="path">/api/v1/session</code><span class="sum">Завершити сесію</span></div>
+  <div class="op-b">
+    <p>Видаляє сесію й cookie. Відповідь: <code>{"ok": true}</code>.</p>
+  </div>
+</section>
+
+<h2 class="group" id="v3">Сумісність з ukrainealarm API v3</h2>
+<p class="groupnote">Ті самі поля й семантика, що в <code>https://api.ukrainealarm.com/api/v3</code>: замініть адресу на цей сервер і токен — на свій.
+Повертаються лише регіони, дозволені токену. Якщо дані застаріли, відповідь має заголовок <code>X-Data-Stale: 1</code>.
+Тестова область у v3 не потрапляє.</p>
+
+<section class="op" id="op-v3-alerts" data-path="/api/v3/alerts">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v3/alerts</code><span class="sum">Усі регіони з тривогою</span></div>
+  <div class="op-b">
+    <p>Масив записів регіонів, де зараз є тривога. Запис регіону містить тривоги, оголошені для нього самого,
+    його предків і вкладених регіонів — кожна зі своїм <code>regionId</code> (як в оригіналі).</p>
+<pre class="json">[
+  {
+    "regionId": "4", "regionType": "State", "regionName": "Вінницька область",
+    "lastUpdate": "2026-11-08T13:01:10Z",
+    "activeAlerts": [
+      { "regionId": "32", "regionType": "District", "type": "AIR",
+        "lastUpdate": "2026-11-08T13:01:10Z",
+        "activeAlertLevels": [ { "alertLevel": "Red", "reason": "", "createdAt": "2026-11-08T13:01:10Z" } ] }
+    ]
+  }
+]</pre>
+    <form class="try" data-path="/api/v3/alerts"><button class="btn dark" type="submit">Виконати</button></form>
+  </div>
+</section>
+
+<section class="op" id="op-v3-alert" data-path="/api/v3/alerts/{regionId}">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v3/alerts/{regionId}</code><span class="sum">Запис одного регіону</span></div>
+  <div class="op-b">
+    <p>Масив з одного запису (як в оригіналі). Без тривоги — запис з порожнім <code>activeAlerts</code>.</p>
+    <h4>Параметри</h4>
+    <table class="tbl params">
+      <thead><tr><th>Назва</th><th>Де</th><th>Опис</th></tr></thead>
+      <tbody><tr><td><code>regionId</code></td><td>path</td><td>ID регіону, напр. <code>32</code></td></tr></tbody>
+    </table>
+    <form class="try" data-path="/api/v3/alerts/{regionId}">
+      <label>regionId <input name="regionId" placeholder="32" required></label>
+      <button class="btn dark" type="submit">Виконати</button>
+    </form>
+  </div>
+</section>
+
+<section class="op" id="op-v3-status" data-path="/api/v3/alerts/status">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v3/alerts/status</code><span class="sum">Індекс змін</span></div>
+  <div class="op-b">
+    <p><code>{"lastActionIndex": N}</code> — зростає з кожною зміною. Дешевий спосіб дізнатись, чи варто перечитати <code>/alerts</code>.</p>
+    <form class="try" data-path="/api/v3/alerts/status"><button class="btn dark" type="submit">Виконати</button></form>
+  </div>
+</section>
+
+<section class="op" id="op-v3-regions" data-path="/api/v3/regions">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v3/regions</code><span class="sum">Дерево регіонів</span></div>
+  <div class="op-b">
+    <p><code>{"states": [{"regionId", "regionName", "regionType", "regionChildIds": [ … ]}]}</code> — вкладене дерево, як в оригіналі. Має <code>ETag</code>.</p>
+    <form class="try" data-path="/api/v3/regions"><button class="btn dark" type="submit">Виконати</button></form>
+  </div>
+</section>
+
+<section id="schemas" class="block">
+  <h2>Схеми</h2>
+  <div class="schema" id="s-status">
+    <h3>StatusResponse</h3>
+    <table class="tbl">
+      <tbody>
+        <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code></td></tr>
+        <tr><td><code>stale</code></td><td>boolean</td><td><code>true</code> — дані давно не підтверджувались з джерелом</td></tr>
+        <tr><td><code>verifiedAt</code></td><td>string, date-time</td><td>коли стан востаннє підтверджено повним знімком ukrainealarm</td></tr>
+        <tr><td><code>version</code></td><td>integer</td><td>зростає з кожною зміною стану на сервері</td></tr>
+        <tr><td><code>regions</code></td><td>object</td><td>ID → <a href="#s-region">RegionStatus</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="schema" id="s-region">
+    <h3>RegionStatus</h3>
+    <table class="tbl">
+      <tbody>
+        <tr><td><code>id</code>, <code>name</code></td><td>string</td><td>ID і назва регіону</td></tr>
+        <tr><td><code>type</code></td><td>string</td><td><code>State</code> | <code>District</code> | <code>Community</code></td></tr>
+        <tr><td><code>state</code></td><td>string</td><td><code>active</code> | <code>partial</code> | <code>none</code></td></tr>
+        <tr><td><code>level</code></td><td>string?</td><td>найвищий рівень: <code>red</code> | <code>yellow</code> | <code>unknown</code>; немає при <code>none</code></td></tr>
+        <tr><td><code>since</code></td><td>string?, date-time</td><td>початок тривоги (для <code>active</code>)</td></tr>
+        <tr><td><code>types</code></td><td>object</td><td>тип тривоги → <a href="#s-type">TypeStatus</a>; порожній <code>{}</code> при <code>none</code></td></tr>
+        <tr><td><code>test</code></td><td>boolean?</td><td><code>true</code> — регіон <a href="#test-region">тестової області</a>, тривоги вигадані</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="schema" id="s-type">
+    <h3>TypeStatus</h3>
+    <table class="tbl">
+      <tbody>
+        <tr><td><code>state</code></td><td>string</td><td><code>active</code> | <code>partial</code></td></tr>
+        <tr><td><code>levels</code></td><td>string[]</td><td>усі чинні рівні, від найвищого</td></tr>
+        <tr><td><code>since</code></td><td>string?, date-time</td><td>найраніший початок серед чинних тривог (для <code>active</code>)</td></tr>
+        <tr><td><code>from</code></td><td>string[]?</td><td>де оголошено: сам регіон або його предки (для <code>active</code>)</td></tr>
+        <tr><td><code>partial</code></td><td>string[]?</td><td>вкладені регіони з тривогою (для <code>partial</code>)</td></tr>
+      </tbody>
+    </table>
+    <p class="k">Типи тривог: <code>AIR</code> (повітряна), <code>ARTILLERY</code> (артобстріл), <code>URBAN_FIGHTS</code> (вуличні бої),
+    <code>CHEMICAL</code>, <code>NUCLEAR</code>, <code>INFO</code> та інші, які надсилає ukrainealarm.</p>
+  </div>
+  <div class="schema" id="s-error">
+    <h3>Error</h3>
+<pre class="json">{ "ok": false, "error": "unauthorized" }</pre>
+  </div>
+</section>
+
+<section id="errors" class="block">
+  <h2>Помилки й ліміти</h2>
+  <table class="tbl">
+    <thead><tr><th>Код</th><th>Коли</th><th>Що робити</th></tr></thead>
+    <tbody>
+      <tr><td><code>400</code></td><td>некоректний чи невідомий регіон, забагато регіонів (понад 64)</td><td>виправити запит</td></tr>
+      <tr><td><code>401</code></td><td>немає токена; невідомий, прострочений, з недозволеної адреси, у адресі без дозволу</td><td>перевірити токен — причину навмисно не уточнюємо</td></tr>
+      <tr><td><code>403</code></td><td>регіон поза дозволеними для токена</td><td>запитувати лише свої регіони</td></tr>
+      <tr><td><code>429</code></td><td>перевищено ліміт запитів чи потоків токена; або адресу тимчасово заблоковано після невдалих спроб</td><td>чекати <code>Retry-After</code> секунд</td></tr>
+      <tr><td><code>503</code></td><td>сервер щойно запустився або забагато потоків загалом</td><td>повторити пізніше</td></tr>
+    </tbody>
+  </table>
+  <ul class="rules">
+    <li>Ліміт запитів — на токен, за хвилину (видно в <a href="#op-me">/me</a>, поле <code>rpm</code>). Потік рахується як один запит.</li>
+    <li>Багато невдалих спроб авторизації з однієї адреси — адресу блокують на 15 хв (усі запити → <code>429</code>).</li>
+    <li>Затримка: сервер передає зміну за мілісекунди; сама подія від ukrainealarm приходить зазвичай за 2–10 с,
+    зрідка до хвилини. Якщо webhook загубився, зміну підбирає щохвилинна звірка з API ukrainealarm.</li>
+  </ul>
+</section>
+
+<section id="test-region" class="block">
+  <h2>Тестова область</h2>
+  <p>Для перевірки пристроїв без справжньої тривоги є вигадані регіони, якими керує адміністратор:
+  <code>990000</code> «Тестова область», <code>990100</code> і <code>990200</code> — райони, <code>990101</code>, <code>990102</code> — громади.</p>
+  <ul class="rules">
+    <li>Їх бачать лише токени, яким тестову область дозволено явно («усі регіони» її не включають).</li>
+    <li>Кожен їхній стан має <code>"test": true</code>; у сумісному v3 і на публічній сторінці їх немає.</li>
+    <li>Ієрархія та сама: тривога в тестовому районі робить його громади <code>active</code>, а область — <code>partial</code>.</li>
+  </ul>
+</section>
+
+<section id="examples" class="block">
+  <h2>Приклади коду</h2>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="curl">curl</button>
+    <button role="tab" aria-selected="false" data-tab="js">JavaScript</button>
+    <button role="tab" aria-selected="false" data-tab="py">Python</button>
+    <button role="tab" aria-selected="false" data-tab="esp">ESP8266 (Arduino)</button>
+  </div>
+<pre class="code tab" data-tab="curl"># стан
+curl -H "Authorization: Bearer $TOKEN" "<span class="base-t">https://alerts.example.com</span>/api/v1/status?regions=32"
+
+# потік змін (-N — без буферизації)
+curl -N -H "Authorization: Bearer $TOKEN" "<span class="base-t">https://alerts.example.com</span>/api/v1/stream?regions=32"</pre>
+<pre class="code tab" data-tab="js" hidden>// Node 18+ або браузер з токеном у заголовку (fetch уміє потоки)
+const r = await fetch("<span class="base-t">https://alerts.example.com</span>/api/v1/stream?regions=32", {
+  headers: { Authorization: `Bearer ${TOKEN}` },
+});
+const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+let buf = "";
+for (;;) {
+  const { value, done } = await reader.read();
+  if (done) break;                        // обрив — перепідключіться
+  buf += value;
+  let i;
+  while ((i = buf.indexOf("\n\n")) >= 0) {
+    const block = buf.slice(0, i); buf = buf.slice(i + 2);
+    const ev = /^event: (.*)$/m.exec(block)?.[1];
+    const data = /^data: (.*)$/m.exec(block)?.[1];
+    if (ev === "snapshot") render(JSON.parse(data).regions);
+    if (ev === "update") update(JSON.parse(data).region);
+  }
+}
+
+// у браузері на тому ж сайті — через сесію й EventSource:
+await fetch("/api/v1/session", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` } });
+const es = new EventSource("/api/v1/stream?regions=32");
+es.addEventListener("update", (e) => update(JSON.parse(e.data).region));</pre>
+<pre class="code tab" data-tab="py" hidden>import json, time, requests
+
+URL = "<span class="base-t">https://alerts.example.com</span>/api/v1/stream"
+while True:
+    try:
+        with requests.get(URL, params={"regions": "32"},
+                          headers={"Authorization": f"Bearer {TOKEN}"},
+                          stream=True, timeout=(10, 45)) as r:
+            r.raise_for_status()
+            event = None
+            for line in r.iter_lines(decode_unicode=True):
+                if line.startswith("event: "):
+                    event = line[7:]
+                elif line.startswith("data: ") and event in ("snapshot", "update"):
+                    print(event, json.loads(line[6:]))
+    except requests.RequestException as e:
+        print("reconnect:", e)
+    time.sleep(3)</pre>
+<pre class="code tab" data-tab="esp" hidden>// ESP8266 (ESP-12F, NodeMCU, Wemos D1 mini). Плата: esp8266 core 3.x; бібліотека ArduinoJson 7.
+// Опитування стану раз на 15 с — найнадійніше для ESP8266 (мало пам'яті під TLS).
+#include &lt;ESP8266WiFi.h&gt;
+#include &lt;ESP8266HTTPClient.h&gt;
+#include &lt;WiFiClientSecureBearSSL.h&gt;
+#include &lt;ArduinoJson.h&gt;
+
+const char* WIFI_SSID = "…";
+const char* WIFI_PASS = "…";
+const char* URL    = "<span class="base-t">https://alerts.example.com</span>/api/v1/status?regions=37";
+const char* TOKEN  = "ac_…";
+const char* REGION = "37";
+
+BearSSL::WiFiClientSecure tls;
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) delay(250);
+  tls.setInsecure();   // для початку; надійніше — setTrustAnchors() з коренем ISRG Root X1
+                       // (тоді потрібен точний час: configTime(0, 0, "pool.ntp.org"))
+}
+
+void poll() {
+  HTTPClient http;
+  http.setTimeout(10000);
+  if (!http.begin(tls, URL)) return;
+  http.addHeader("Authorization", String("Bearer ") + TOKEN);
+  const char* keys[] = {"Retry-After"};
+  http.collectHeaders(keys, 1);
+  int code = http.GET();
+  if (code == 200) {
+    // фільтр: розбираємо лише потрібні поля — економить оперативну пам'ять
+    JsonDocument filter;
+    filter["stale"] = true;
+    filter["regions"][REGION]["state"] = true;
+    filter["regions"][REGION]["level"] = true;
+    JsonDocument doc;
+    if (!deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter))) {
+      bool stale = doc["stale"];
+      const char* state = doc["regions"][REGION]["state"] | "none";   // active | partial | none
+      const char* level = doc["regions"][REGION]["level"] | "";       // red | yellow | unknown
+      Serial.printf("%s %s%s\n", state, level, stale ? " (stale)" : "");
+      // showState(state, level, stale);
+    }
+  } else if (code == 429) {
+    int wait = http.header("Retry-After").toInt();
+    http.end();
+    delay((wait > 0 ? wait : 30) * 1000UL);
+    return;
+  } else {
+    Serial.printf("HTTP %d\n", code);   // 401 — токен; від'ємне — мережа/TLS
+  }
+  http.end();
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) poll();
+  delay(15000);
+}</pre>
+</section>
+
+<footer class="foot">Дані: <a href="https://www.ukrainealarm.com/" rel="noopener">ukrainealarm.com</a> · <a href="/">Тривоги зараз</a></footer>
+</main>
+</div>
+
+<div class="console" id="console" hidden>
+  <div class="con-h"><b id="con-title">Відповідь</b><button type="button" class="btn small" id="con-close">Закрити</button></div>
+  <div class="con-req"><span class="k">Запит</span><code id="con-url"></code><button type="button" class="btn small" id="con-copy">Копіювати curl</button></div>
+  <div class="con-meta" id="con-meta"></div>
+  <pre class="con-body" id="con-body"></pre>
+</div>
+</body>
+</html>

@@ -1,0 +1,68 @@
+[Unit]
+Description=alertcast — API тривог для пристроїв (у парі з alertd)
+After=network-online.target alertd.service
+Wants=network-online.target
+# Ніколи не «здаватися»: без цього systemd припиняє перезапуски після 5 падінь за 10 с.
+StartLimitIntervalSec=0
+
+[Service]
+# notify: systemd чекає READY=1, а WATCHDOG=1 має надходити частіше за WatchdogSec —
+# інакше завислу (а не лише впалу) службу буде перезапущено.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
+User=alertcast
+Group=alertcast
+EnvironmentFile=/etc/alertcast/alertcast.env
+Environment=GOMEMLIMIT=200MiB
+ExecStart=/usr/local/bin/alertcast run
+Restart=always
+RestartSec=2
+StateDirectory=alertcast
+StateDirectoryMode=0750
+# Сокет керування токенами: /run/alertcast/admin.sock (0600) — лише root і сама служба
+RuntimeDirectory=alertcast
+RuntimeDirectoryMode=0750
+UMask=0077
+TimeoutStopSec=10
+LimitNOFILE=65536
+
+# Мережа: служба говорить лише з локальними адресами (alertd і reverse proxy на цьому
+# сервері). Будь-яке з'єднання назовні заборонене ядром. Якщо VPN_LISTEN слухає не-loopback
+# адресу (напр. 10.77.0.1), додайте її мережу: IPAddressAllow=localhost 10.77.0.0/24
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# Ізоляція
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+PrivateUsers=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+MemoryMax=320M
+
+[Install]
+WantedBy=multi-user.target

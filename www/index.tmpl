@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<noscript><meta http-equiv="refresh" content="60"></noscript>
+<title>{{if .Site}}{{.Site}}{{else}}Тривоги зараз{{end}}</title>
+<style>
+  :root { --bg: #f6f5f1; --fg: #1d1d1b; --muted: #6f6c66; --line: #e3e1da; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111210; --fg: #e9e7e1; --muted: #9a978f; --line: #2c2b28; color-scheme: dark; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 13px; }
+  th, td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.n { padding-left: 20px; }
+  tr.top td { font-weight: 600; }
+  .empty { padding: 24px 0; color: var(--muted); }
+  footer { margin-top: 20px; font-size: 13px; color: var(--muted); }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main data-health="{{.Health}}">
+<h1>Тривоги зараз</h1>
+<p id="st">{{.Status}}{{if .States}} · під тривогою областей: {{.States}}{{if .Districts}}, районів: {{.Districts}}{{end}}{{end}}</p>
+{{- if .Rows}}
+<table>
+<thead><tr><th>Регіон</th><th>Тривога</th><th>Рівень</th><th>З</th></tr></thead>
+<tbody>
+{{- range .Rows}}
+<tr{{if .Top}} class="top"{{end}}><td{{if not .Top}} class="n"{{end}}>{{.Name}}</td><td>{{.Kind}}</td><td>{{.Level}}</td><td>{{.Since}}</td></tr>
+{{- end}}
+</tbody>
+</table>
+{{- else}}
+<div class="empty">Тривог немає.</div>
+{{- end}}
+<footer>Дані: ukrainealarm.com · сторінка оновлюється сама · <a href="/docs">API для пристроїв</a></footer>
+</main>
+<script>{{.Script}}</script>
+</body>
+</html>
