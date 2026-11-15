@@ -74,7 +74,7 @@ func (s *State) SetTestAlert(region, typ, level string, now time.Time) error {
 	}
 	level = strings.ToLower(strings.TrimSpace(level))
 	if level == "none" {
-		s.Apply(&Alert{Region: region, Type: typ}, true)
+		s.Apply(&Alert{Region: region, Type: typ, At: now, Src: "test"}, true)
 		return nil
 	}
 	name, ok := map[string]string{"red": "Red", "yellow": "Yellow", "unknown": ""}[level]
@@ -87,7 +87,7 @@ func (s *State) SetTestAlert(region, typ, level string, now time.Time) error {
 			since = x.Since // тривога триває — початок той самий
 		}
 	}
-	s.Apply(&Alert{Region: region, Type: typ, Since: since, Levels: []Level{{Level: name, CreatedAt: jtime{now}}}}, false)
+	s.Apply(&Alert{Region: region, Type: typ, Since: since, Levels: []Level{{Level: name, CreatedAt: jtime{now}}}, At: now, Src: "test"}, false)
 	return nil
 }
 
@@ -107,7 +107,7 @@ func (s *State) ClearTest(now time.Time, olderThan time.Duration) int {
 	}
 	s.mu.RUnlock()
 	for _, a := range drop {
-		s.Apply(&Alert{Region: a.Region, Type: a.Type}, true)
+		s.Apply(&Alert{Region: a.Region, Type: a.Type, At: now, Src: "test"}, true)
 	}
 	return len(drop)
 }

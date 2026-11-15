@@ -332,6 +332,8 @@ func (a *App) serveAPI(w0 http.ResponseWriter, r *http.Request, ipSource string,
 		a.v1Status(w, r, tk)
 	case p == "/api/v1/stream":
 		a.v1Stream(w, r, tk, ip)
+	case p == "/api/v1/events":
+		a.v1Events(w, r, tk, ip)
 	case p == "/api/v1/regions":
 		a.serveRegions(w, r, false)
 	case p == "/api/v1/me":

@@ -24,7 +24,7 @@ func TestDocsPage(t *testing.T) {
 		t.Fatalf("docs on vpn: %d", r.code)
 	}
 	// усі ID операцій зі змісту існують на сторінці
-	for _, id := range []string{"op-status", "op-stream", "op-regions", "op-me", "op-session-post", "op-session-delete",
+	for _, id := range []string{"op-status", "op-stream", "op-events", "op-regions", "op-me", "op-session-post", "op-session-delete",
 		"op-v3-alerts", "op-v3-alert", "op-v3-status", "op-v3-regions", "schemas", "errors", "test-region", "examples"} {
 		if !strings.Contains(r.body, `id="`+id+`"`) || !strings.Contains(r.body, `href="#`+id+`"`) {
 			t.Fatalf("toc/anchor %s", id)

@@ -25,6 +25,7 @@
   <p class="toc-h">API v1</p>
   <a href="#op-status"><span class="m get">GET</span>/status</a>
   <a href="#op-stream"><span class="m get">GET</span>/stream</a>
+  <a href="#op-events"><span class="m get">GET</span>/events</a>
   <a href="#op-regions"><span class="m get">GET</span>/regions</a>
   <a href="#op-me"><span class="m get">GET</span>/me</a>
   <a href="#op-session-post"><span class="m post">POST</span>/session</a>
@@ -200,6 +201,55 @@ data: {"version":4183,"region":{"id":"32","state":"none","types":{},…}}
   </div>
 </section>
 
+<section class="op" id="op-events" data-path="/api/v1/events">
+  <div class="op-h"><span class="m get">GET</span><code class="path">/api/v1/events</code><span class="sum">Стрічка змін тривог (SSE) — для ботів і власних баз</span></div>
+  <div class="op-b">
+    <p>Кожна зміна окремої тривоги (регіон × тип) — подія <code>start</code>, <code>update</code> чи <code>end</code>
+    в тому порядку, в якому їх застосував сервер. Це «сирі» тривоги, як їх оголосили: ієрархію
+    (громада під тривогою області) клієнт рахує сам або бере з <a href="#op-status">/status</a>.
+    Підходить, щоб розсилати сповіщення чи вести власну базу для всієї України одним з'єднанням.</p>
+    <h4>Параметри</h4>
+    <table class="tbl params">
+      <thead><tr><th>Назва</th><th>Де</th><th>Опис</th></tr></thead>
+      <tbody><tr><td><code>test</code></td><td>query</td><td><code>1</code> — додати <a href="#test-region">тестову область</a> (для токенів без обмеження регіонів; обмеженим токенам вона приходить, лише якщо дозволена явно)</td></tr></tbody>
+    </table>
+    <p>Регіони — усі, дозволені токену; параметра <code>regions</code> немає. Потік рахується в ліміт потоків токена.</p>
+    <h4>Події</h4>
+    <table class="tbl">
+      <thead><tr><th>event</th><th>data</th><th>Коли</th></tr></thead>
+      <tbody>
+        <tr><td><code>snapshot</code></td><td><code>{"ok", "stale", "verifiedAt", "version", "alerts": [<a href="#s-feed">AlertEvent</a>]}</code></td><td>одразу після підключення — усі чинні тривоги (<code>change</code> = <code>active</code>)</td></tr>
+        <tr><td><code>alert</code></td><td><a href="#s-feed">AlertEvent</a></td><td>кожна зміна: <code>start</code>, <code>update</code> (змінились рівні), <code>end</code></td></tr>
+        <tr><td><code>resync</code></td><td>як <code>snapshot</code></td><td>клієнт відстав більше, ніж вміщує буфер сервера (8192 зміни) — повний стан замість пропущених подій</td></tr>
+        <tr><td><code>meta</code></td><td><code>{"stale", "verifiedAt"}</code></td><td>змінилась свіжість даних</td></tr>
+        <tr><td><code>bye</code></td><td><code>{"reason"}</code></td><td>токен змінено, відкликано чи прострочено</td></tr>
+        <tr><td><code>: ping</code></td><td>—</td><td>кожні 15 с</td></tr>
+      </tbody>
+    </table>
+<pre class="sse">event: snapshot
+data: {"ok":true,"stale":false,"verifiedAt":"…","version":4182,"alerts":[…]}
+
+event: alert
+data: {"seq":17,"version":4183,"change":"start","regionId":"37","regionName":"Гайсинський район",
+       "regionType":"District","stateId":"4","stateName":"Вінницька область","type":"AIR",
+       "levels":["red"],"since":"2026-11-15T18:02:11Z","at":"2026-11-15T18:02:11Z","source":"webhook"}</pre>
+    <ul class="rules">
+      <li><b>Після перепідключення</b> приходить новий <code>snapshot</code>: порівняйте його зі своїм станом —
+        чого немає в знімку, те закінчилось, поки з'єднання не було. Відновлення «з місця обриву» немає навмисно:
+        знімок завжди правдивий, навіть після перезапуску сервера.</li>
+      <li><code>seq</code> зростає в межах одного запуску сервера — зручно помітити дублікати; після перезапуску починається знову.</li>
+      <li><code>at</code> — час події в ukrainealarm (для <code>source</code> = <code>webhook</code> / <code>poll</code>), <code>since</code> — початок тривоги.
+        <code>source</code> = <code>resync</code> — зміну знайдено, коли сервер заново прочитав повний стан.</li>
+      <li>Якщо 45 с не надходить нічого (навіть <code>ping</code>) — перепідключіться.</li>
+    </ul>
+    <form class="try" data-path="/api/v1/events" data-stream="1">
+      <label>test <input name="test" placeholder="1"></label>
+      <button class="btn dark" type="submit">Підключитися</button>
+      <button class="btn stop" type="button" hidden>Зупинити</button>
+    </form>
+  </div>
+</section>
+
 <section class="op" id="op-regions" data-path="/api/v1/regions">
   <div class="op-h"><span class="m get">GET</span><code class="path">/api/v1/regions</code><span class="sum">Список регіонів</span></div>
   <div class="op-b">
@@ -358,6 +408,25 @@ const es = new EventSource("/api/v1/stream?regions=32");   // cookie додає�
     <p class="k">Типи тривог: <code>AIR</code> (повітряна), <code>ARTILLERY</code> (артобстріл), <code>URBAN_FIGHTS</code> (вуличні бої),
     <code>CHEMICAL</code>, <code>NUCLEAR</code>, <code>INFO</code> та інші, які надсилає ukrainealarm.</p>
   </div>
+  <div class="schema" id="s-feed">
+    <h3>AlertEvent</h3>
+    <table class="tbl">
+      <tbody>
+        <tr><td><code>seq</code></td><td>integer</td><td>порядковий номер події в межах запуску сервера (у знімку немає)</td></tr>
+        <tr><td><code>version</code></td><td>integer</td><td>версія стану після зміни</td></tr>
+        <tr><td><code>change</code></td><td>string</td><td><code>start</code> | <code>update</code> | <code>end</code>; у знімку — <code>active</code></td></tr>
+        <tr><td><code>regionId</code>, <code>regionName</code>, <code>regionType</code></td><td>string</td><td>регіон, для якого оголошено тривогу</td></tr>
+        <tr><td><code>districtId</code></td><td>string?</td><td>район (лише для громади)</td></tr>
+        <tr><td><code>stateId</code>, <code>stateName</code></td><td>string</td><td>область</td></tr>
+        <tr><td><code>type</code></td><td>string</td><td>тип тривоги: <code>AIR</code>, <code>ARTILLERY</code>, …</td></tr>
+        <tr><td><code>levels</code></td><td>string[]</td><td>чинні рівні від найвищого: <code>red</code>, <code>yellow</code>, <code>unknown</code>; при <code>end</code> — порожньо</td></tr>
+        <tr><td><code>since</code></td><td>string?, date-time</td><td>початок тривоги</td></tr>
+        <tr><td><code>at</code></td><td>string, date-time</td><td>коли сталася зміна</td></tr>
+        <tr><td><code>source</code></td><td>string?</td><td><code>webhook</code> | <code>poll</code> | <code>startup</code> | <code>resync</code> | <code>test</code></td></tr>
+        <tr><td><code>test</code></td><td>boolean?</td><td><code>true</code> — тестова область</td></tr>
+      </tbody>
+    </table>
+  </div>
   <div class="schema" id="s-error">
     <h3>Error</h3>
 <pre class="json">{ "ok": false, "error": "unauthorized" }</pre>
@@ -432,21 +501,44 @@ for (;;) {
 await fetch("/api/v1/session", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` } });
 const es = new EventSource("/api/v1/stream?regions=32");
 es.addEventListener("update", (e) => update(JSON.parse(e.data).region));</pre>
-<pre class="code tab" data-tab="py" hidden>import json, time, requests
+<pre class="code tab" data-tab="py" hidden># Бот чи власна база: стрічка змін усіх дозволених регіонів (/api/v1/events).
+# pip install requests
+import json, time, requests
 
-URL = "<span class="base-t">https://alerts.example.com</span>/api/v1/stream"
+URL = "<span class="base-t">https://alerts.example.com</span>/api/v1/events"
+active = {}   # (regionId, type) -> подія; стан, який бот вважає чинним (зберігайте в БД,
+              # щоб після перезапуску бота не сповіщати вдруге про те, що вже триває)
+
+def on_change(change, ev):
+    print(change, ev["regionName"], ev["type"], ",".join(ev["levels"]))   # тут — сповіщення
+
 while True:
     try:
-        with requests.get(URL, params={"regions": "32"},
-                          headers={"Authorization": f"Bearer {TOKEN}"},
-                          stream=True, timeout=(10, 45)) as r:
+        with requests.get(URL, headers={"Authorization": f"Bearer {TOKEN}"},
+                          stream=True, timeout=(10, 45)) as r:      # 45 с без даних — обрив
             r.raise_for_status()
             event = None
             for line in r.iter_lines(decode_unicode=True):
                 if line.startswith("event: "):
                     event = line[7:]
-                elif line.startswith("data: ") and event in ("snapshot", "update"):
-                    print(event, json.loads(line[6:]))
+                elif line.startswith("data: "):
+                    data = json.loads(line[6:])
+                    if event in ("snapshot", "resync"):
+                        now = {(a["regionId"], a["type"]): a for a in data["alerts"]}
+                        for k in active.keys() - now.keys():
+                            on_change("end", active[k])          # закінчилось, поки не було зв'язку
+                        for k in now.keys() - active.keys():
+                            on_change("start", now[k])
+                        active = now
+                    elif event == "alert":
+                        k = (data["regionId"], data["type"])
+                        if data["change"] == "end":
+                            active.pop(k, None)
+                        else:
+                            active[k] = data
+                        on_change(data["change"], data)
+                    elif event == "bye":
+                        print("сервер закрив потік:", data["reason"])
     except requests.RequestException as e:
         print("reconnect:", e)
     time.sleep(3)</pre>

@@ -49,6 +49,8 @@ type Alert struct {
 	Type   string
 	Levels []Level
 	Since  time.Time
+	At     time.Time // коли сталася зміна (для стрічки /events); не обов'язково
+	Src    string    // звідки: webhook | poll | startup | test (для стрічки /events)
 }
 
 func (a *Alert) lastUpdate() time.Time {
@@ -233,10 +235,11 @@ type State struct {
 	version  uint64               // зростає з кожною зміною (lastActionIndex для v3)
 	applied  map[uint64]applyInfo // версія → коли застосовано (для вимірювання доставки)
 	compat   compatCache
+	feed     *Feed
 }
 
 func NewState() *State {
-	return &State{tree: BuildTree(nil), byRegion: map[string][]*Alert{}, byState: map[string][]*Alert{}}
+	return &State{tree: BuildTree(nil), byRegion: map[string][]*Alert{}, byState: map[string][]*Alert{}, feed: NewFeed()}
 }
 
 func (s *State) Version() uint64 {
@@ -260,6 +263,15 @@ func (s *State) SetTree(t *Tree) {
 	s.version++
 }
 
+func findType(as []*Alert, typ string) *Alert {
+	for _, a := range as {
+		if a.Type == typ {
+			return a
+		}
+	}
+	return nil
+}
+
 // Replace замінює весь сирий стан (знімок /state з alertd).
 func (s *State) Replace(alerts []*Alert) {
 	s.mu.Lock()
@@ -278,6 +290,29 @@ func (s *State) Replace(alerts []*Alert) {
 	}
 	s.reindexLocked()
 	s.version++
+	// стрічка: різниця між старим і новим станом (те, що змінилось, поки не було зв'язку)
+	var evs []FeedEvent
+	for id, as := range old {
+		if isTestRegion(id) {
+			continue
+		}
+		for _, o := range as {
+			if n := findType(s.byRegion[id], o.Type); n == nil {
+				evs = append(evs, s.feedEventLocked("end", o, time.Time{}, "resync"))
+			} else if !sameLevels(o.Levels, n.Levels) {
+				evs = append(evs, s.feedEventLocked("update", n, n.lastUpdate(), "resync"))
+			}
+		}
+	}
+	for id, as := range s.byRegion {
+		for _, n := range as {
+			if !isTestRegion(id) && findType(old[id], n.Type) == nil {
+				evs = append(evs, s.feedEventLocked("start", n, n.lastUpdate(), "resync"))
+			}
+		}
+	}
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Region+evs[i].Type < evs[j].Region+evs[j].Type })
+	s.feed.append(evs...)
 }
 
 // Apply застосовує одну зміну: nil-рівні або порожні — тривогу знято.
@@ -294,6 +329,10 @@ func (s *State) Apply(a *Alert, ended bool) string {
 		if x.Type == a.Type {
 			idx = i
 		}
+	}
+	var prev *Alert
+	if idx >= 0 {
+		prev = cur[idx]
 	}
 	if ended {
 		if idx < 0 {
@@ -315,6 +354,14 @@ func (s *State) Apply(a *Alert, ended bool) string {
 	st := s.tree.stateOf(a.Region)
 	s.reindexStateLocked(st)
 	s.version++
+	switch {
+	case ended:
+		s.feed.append(s.feedEventLocked("end", prev, a.At, a.Src))
+	case prev == nil:
+		s.feed.append(s.feedEventLocked("start", a, a.At, a.Src))
+	case !sameLevels(prev.Levels, a.Levels):
+		s.feed.append(s.feedEventLocked("update", a, a.At, a.Src))
+	}
 	return st
 }
 

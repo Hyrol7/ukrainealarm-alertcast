@@ -353,7 +353,8 @@ func (s *Source) applyEvent(ev alertdEvent) {
 		return // тестову область alertd змінювати не може
 	}
 	ended := ev.Change == "end" || len(ev.Active) == 0
-	a := &Alert{Region: ev.RegionID, Type: ev.AlarmType, Levels: canon(ev.Active), Since: ev.SessionFrom.Time}
+	a := &Alert{Region: ev.RegionID, Type: ev.AlarmType, Levels: canon(ev.Active), Since: ev.SessionFrom.Time,
+		At: ev.CreatedAt.Time, Src: ev.Source}
 	if st := s.state.Apply(a, ended); st != "" {
 		s.applied.Add(1)
 		now := time.Now()
