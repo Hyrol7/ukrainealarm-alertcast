@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -118,8 +119,19 @@ func TestEventsLimitsAndBye(t *testing.T) {
 	if c2 := openStream(t, ta.pub.URL, "/api/v1/events", secret); c2.code != 429 {
 		t.Fatalf("second stream: %d", c2.code)
 	}
-	if s := ta.hub.List(tk.ID); len(s) != 1 {
+	if s := ta.hub.List(tk.ID); len(s) != 1 || s[0].Kind != "events" || s[0].Regions == nil {
 		t.Fatalf("streams: %+v", s)
+	}
+	// адмінка: сторінка токена з відкритою стрічкою (регіонів немає — не null)
+	sec, _ := newTOTPSecret()
+	h, _ := hashPassword("pass-pass-pass")
+	ta.admAuth.Set(h, sec)
+	srv := httptest.NewServer(ta.AdminHandler())
+	defer srv.Close()
+	c2 := &admClient{t: t, base: srv.URL, origin: srv.URL}
+	c2.login(&authFixture{a: ta.admAuth, clk: &fakeClock{t: time.Now()}, secret: sec})
+	if r := c2.req("GET", "/api/tokens/"+tk.ID, ""); !strings.Contains(r.body, `"kind":"events","regions":[]`) {
+		t.Fatalf("admin token page: %s", r.body)
 	}
 	ta.admin(adminReq{Op: "revoke", ID: tk.ID})
 	if e := c.next(t, 2*time.Second); e.name != "bye" {

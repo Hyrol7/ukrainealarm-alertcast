@@ -12,6 +12,7 @@ import (
 // клієнт нікого не гальмує, а зміна не може загубитися через переповнений буфер.
 type Sub struct {
 	Regions  []string
+	Kind     string // stream | events
 	TokenID  string
 	IP       string
 	Listener string
@@ -172,7 +173,8 @@ type StreamInfo struct {
 	TokenID  string    `json:"token"`
 	IP       string    `json:"ip"`
 	Listener string    `json:"listener"`
-	Regions  []string  `json:"regions"`
+	Kind     string    `json:"kind"`    // stream (/api/v1/stream) | events (/api/v1/events)
+	Regions  []string  `json:"regions"` // для events — порожньо: усі дозволені токену
 	Opened   time.Time `json:"opened"`
 	Sent     int64     `json:"sent"`
 }
@@ -184,7 +186,14 @@ func (h *Hub) List(tokenID string) []StreamInfo {
 	var out []StreamInfo
 	for s := range h.subs {
 		if tokenID == "" || s.TokenID == tokenID {
-			out = append(out, StreamInfo{TokenID: s.TokenID, IP: s.IP, Listener: s.Listener, Regions: s.Regions, Opened: s.Opened, Sent: s.Sent.Load()})
+			kind, regions := s.Kind, s.Regions
+			if kind == "" {
+				kind = "stream"
+			}
+			if regions == nil {
+				regions = []string{}
+			}
+			out = append(out, StreamInfo{TokenID: s.TokenID, IP: s.IP, Listener: s.Listener, Kind: kind, Regions: regions, Opened: s.Opened, Sent: s.Sent.Load()})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Opened.Before(out[j].Opened) })

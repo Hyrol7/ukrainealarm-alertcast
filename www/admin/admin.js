@@ -765,10 +765,10 @@ async function pageToken(id) {
         h("span", { cls: "k" }, "Причини відмов видно лише тут: ззовні всім відповідає однакова 401."))),
     h("section", { cls: "card scroll" }, h("h2", { cls: "h2" }, "Відкриті потоки"),
       d.streams.length ? [h("table", { cls: "tbl" },
-        h("thead", {}, h("tr", {}, ["Адреса", "Вхід", "Регіони", "Відкрито", "Подій надіслано"].map((x) => h("th", {}, x)))),
+        h("thead", {}, h("tr", {}, ["Адреса", "Вхід", "Що", "Відкрито", "Подій надіслано"].map((x) => h("th", {}, x)))),
         h("tbody", {}, d.streams.map((s) => h("tr", {},
           h("td", { cls: "mono" }, s.ip), h("td", {}, s.listener === "vpn" ? "VPN" : "публічний"),
-          h("td", { cls: "mono" }, s.regions.join(", ")),
+          h("td", { cls: "mono" }, s.kind === "events" ? "/events · усі дозволені" : "/stream · " + (s.regions || []).join(", ")),
           h("td", {}, hms(s.opened), h("span", { cls: "sub" }, dur((Date.now() - new Date(s.opened)) / 1000))),
           h("td", { cls: "mono" }, num(s.sent)))))),
       h("div", { cls: "btns" }, confirmBtn("Закрити потоки (пристрій перепідключиться)", "Закрити всі потоки токена?", "", async () => {

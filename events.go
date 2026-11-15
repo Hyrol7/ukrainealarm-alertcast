@@ -34,6 +34,7 @@ func (a *App) v1Events(w http.ResponseWriter, r *http.Request, tk *token, ip net
 	}
 	sub := newSub(nil, tk.ID, ipKey(ip).String())
 	sub.Listener = listenerName(r)
+	sub.Kind = "events"
 	switch a.hub.Add(sub, tk.Streams) {
 	case "":
 	case "token":
